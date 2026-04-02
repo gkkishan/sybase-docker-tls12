@@ -207,28 +207,18 @@ appsettings.Production.json      # Production overrides (edit this)
 | Key | Location | Description |
 |-----|----------|-------------|
 | `Sybase:ConnectionString` | appsettings.json | ODBC connection string with `Encryption=ssl` and `TrustedFile` |
-| `Sybase:TlsHost` | appsettings.json | Sybase server hostname (for TLS verification) |
-| `Sybase:TlsPort` | appsettings.json | Sybase TLS port (default: 5000) |
 | `Sybase:CaCertPath` | appsettings.json | Path to CA certificate inside the container |
+
+`Server` and `Port` for the TLS diagnostic endpoint are parsed directly from `ConnectionString` — no duplication.
 
 ### Override Precedence
 
-Environment variables take priority over appsettings. This is useful for Kubernetes/Docker where secrets are injected as env vars:
-
 ```
-1. Environment variable (SYBASE_CONNECTION_STRING)    <-- highest priority
-2. appsettings.{Environment}.json (Sybase:ConnectionString)
-3. appsettings.json (Sybase:ConnectionString)         <-- lowest priority
+1. appsettings.{Environment}.json (Sybase:ConnectionString)   <-- highest
+2. appsettings.json (Sybase:ConnectionString)                  <-- lowest
 ```
 
-| Environment Variable | Overrides Config Key |
-|---------------------|---------------------|
-| `SYBASE_CONNECTION_STRING` | `Sybase:ConnectionString` |
-| `SYBASE_TLS_HOST` | `Sybase:TlsHost` |
-| `SYBASE_TLS_PORT` | `Sybase:TlsPort` |
-| `SYBASE_CA_CERT` | `Sybase:CaCertPath` |
-| `ASPNETCORE_URLS` | Kestrel listen address (default: `http://+:8080`) |
-| `ASPNETCORE_ENVIRONMENT` | Selects which `appsettings.{env}.json` to load |
+`ASPNETCORE_ENVIRONMENT` controls which file is loaded (`Development`, `Production`, etc.).
 
 Note: `Sybase:CaCertPath` and `TrustedFile` in the connection string should point to the same CA certificate file. They are consumed by different components (SslStream vs libsapcrypto) but must agree on trust.
 

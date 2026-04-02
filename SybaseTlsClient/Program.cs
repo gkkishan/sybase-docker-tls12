@@ -11,20 +11,22 @@ var app = builder.Build();
 // Config precedence: environment variable > appsettings.{Environment}.json > appsettings.json
 var config = app.Configuration.GetSection("Sybase");
 
-var connectionString = Environment.GetEnvironmentVariable("SYBASE_CONNECTION_STRING")
-    ?? config["ConnectionString"]
+var connectionString = config["ConnectionString"]
     ?? throw new InvalidOperationException("Sybase:ConnectionString is not configured");
 
-var sybaseHost = Environment.GetEnvironmentVariable("SYBASE_TLS_HOST")
-    ?? config["TlsHost"]
-    ?? throw new InvalidOperationException("Sybase:TlsHost is not configured");
-
-var sybasePort = int.Parse(Environment.GetEnvironmentVariable("SYBASE_TLS_PORT")
-    ?? config["TlsPort"] ?? "5000");
-
-var caCertPath = Environment.GetEnvironmentVariable("SYBASE_CA_CERT")
-    ?? config["CaCertPath"]
+var caCertPath = config["CaCertPath"]
     ?? throw new InvalidOperationException("Sybase:CaCertPath is not configured");
+
+// Parse Server and Port from the connection string so they aren't duplicated
+var connParts = connectionString.Split(';')
+    .Select(p => p.Trim().Split('=', 2))
+    .Where(p => p.Length == 2)
+    .ToDictionary(p => p[0].Trim(), p => p[1].Trim(), StringComparer.OrdinalIgnoreCase);
+
+var sybaseHost = connParts.GetValueOrDefault("Server")
+    ?? throw new InvalidOperationException("Server not found in ConnectionString");
+
+var sybasePort = int.Parse(connParts.GetValueOrDefault("Port") ?? "5000");
 
 app.MapGet("/", () => Results.Content("""
 <!DOCTYPE html>
