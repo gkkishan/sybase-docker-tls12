@@ -232,7 +232,7 @@ static object CheckDatabase(string connStr)
         }
 
         using var cmd2 = connection.CreateCommand();
-        cmd2.CommandText = "SELECT name FROM sysdatabases ORDER BY name";
+        cmd2.CommandText = "SELECT name FROM master..sysdatabases ORDER BY name";
         using (var reader2 = cmd2.ExecuteReader())
         {
             while (reader2.Read())
