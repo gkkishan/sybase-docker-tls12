@@ -67,6 +67,16 @@ app.MapGet("/", () => Results.Content("""
         <div id="content"><div class="loading">Click the button below to run diagnostics...</div></div>
         <button class="btn" id="runBtn" onclick="runCheck()">Run TLS & Database Check</button>
         <div class="timestamp" id="ts"></div>
+
+        <div class="card" style="margin-top:2rem">
+            <h2>Query Table</h2>
+            <div style="display:flex;gap:0.5rem;margin-bottom:1rem">
+                <input id="tbl" type="text" placeholder="e.g. master..sysobjects" style="flex:1;padding:0.6rem 1rem;border-radius:8px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;font-family:monospace;font-size:0.95rem" />
+                <input id="maxRows" type="number" value="50" min="1" max="500" style="width:80px;padding:0.6rem;border-radius:8px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;text-align:center" title="Max rows" />
+                <button class="btn" style="margin:0;padding:0.6rem 1.5rem" onclick="queryTable()">Query</button>
+            </div>
+            <div id="qresult"></div>
+        </div>
     </div>
     <script>
         async function runCheck() {
@@ -115,6 +125,28 @@ app.MapGet("/", () => Results.Content("""
         function rowInfo(label, value) {
             return `<div class="status info"><div class="dot"></div><span class="label">${label}</span><span class="value">${value}</span></div>`;
         }
+        async function queryTable() {
+            const tbl = document.getElementById('tbl').value.trim();
+            const max = document.getElementById('maxRows').value || 50;
+            const el = document.getElementById('qresult');
+            if (!tbl) { el.innerHTML = '<div class="status fail"><div class="dot"></div><span class="value">Enter a table name</span></div>'; return; }
+            el.innerHTML = '<div class="loading">Querying...</div>';
+            try {
+                const res = await fetch(`/api/query?table=${encodeURIComponent(tbl)}&maxRows=${max}`);
+                const data = await res.json();
+                if (data.error) { el.innerHTML = `<div class="status fail"><div class="dot"></div><span class="value">${data.error}</span></div>`; return; }
+                if (!data.rows || data.rows.length === 0) { el.innerHTML = '<div class="status info"><div class="dot"></div><span class="value">No rows returned</span></div>'; return; }
+                let h = `<div style="color:#64748b;font-size:0.85rem;margin-bottom:0.5rem">${data.rowCount} row(s) returned</div>`;
+                h += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.85rem;font-family:monospace">';
+                h += '<tr>' + data.columns.map(c => `<th style="text-align:left;padding:0.5rem 0.75rem;border-bottom:2px solid #334155;color:#94a3b8;white-space:nowrap">${c}</th>`).join('') + '</tr>';
+                data.rows.forEach((r, i) => {
+                    const bg = i % 2 === 0 ? '#1e293b' : '#0f172a';
+                    h += '<tr>' + data.columns.map(c => `<td style="padding:0.4rem 0.75rem;border-bottom:1px solid #1e293b;background:${bg};white-space:nowrap">${r[c] ?? ''}</td>`).join('') + '</tr>';
+                });
+                h += '</table></div>';
+                el.innerHTML = h;
+            } catch (e) { el.innerHTML = `<div class="status fail"><div class="dot"></div><span class="value">Error: ${e.message}</span></div>`; }
+        }
     </script>
 </body>
 </html>
@@ -125,6 +157,51 @@ app.MapGet("/api/tls-check", async () =>
     var tlsResult = await CheckTls(sybaseHost, sybasePort, caCertPath);
     var dbResult = CheckDatabase(connectionString);
     return Results.Json(new { tls = tlsResult, db = dbResult });
+});
+
+app.MapGet("/api/query", (string table, int? maxRows) =>
+{
+    if (string.IsNullOrWhiteSpace(table))
+        return Results.Json(new { error = "table parameter is required" });
+
+    // Basic validation — only allow alphanumeric, dots, underscores
+    if (!System.Text.RegularExpressions.Regex.IsMatch(table, @"^[\w.]+$"))
+        return Results.Json(new { error = "Invalid table name" });
+
+    var limit = Math.Clamp(maxRows ?? 50, 1, 500);
+
+    try
+    {
+        using var connection = new OdbcConnection(connectionString);
+        connection.Open();
+
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = $"SET ROWCOUNT {limit} SELECT * FROM {table}";
+
+        using var reader = cmd.ExecuteReader();
+
+        var columns = new List<string>();
+        for (int i = 0; i < reader.FieldCount; i++)
+            columns.Add(reader.GetName(i));
+
+        var rows = new List<Dictionary<string, object?>>();
+        while (reader.Read())
+        {
+            var row = new Dictionary<string, object?>();
+            foreach (var col in columns)
+            {
+                var val = reader[col];
+                row[col] = val == DBNull.Value ? null : val?.ToString();
+            }
+            rows.Add(row);
+        }
+
+        return Results.Json(new { columns, rows, rowCount = rows.Count, error = (string?)null });
+    }
+    catch (Exception ex)
+    {
+        return Results.Json(new { columns = (List<string>?)null, rows = (List<Dictionary<string, object?>>?)null, rowCount = 0, error = ex.Message });
+    }
 });
 
 app.Run();
