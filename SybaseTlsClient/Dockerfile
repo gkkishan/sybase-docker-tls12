@@ -1,6 +1,14 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+
+# Skip SSL verification for NuGet restore behind corp proxy
+ENV DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0
+ENV NUGET_CERT_REVOCATION_MODE=off
+RUN dotnet nuget config --set http_proxy='' && \
+    dotnet nuget config --set signatureValidationMode=accept
+
 WORKDIR /src
 COPY SybaseTlsClient.csproj .
+COPY nuget.config .
 RUN dotnet restore
 COPY . .
 RUN dotnet publish -c Release -o /app
