@@ -1,0 +1,3 @@
+MYSYBASE
+  master tcp ether sybase-server 5000 ssl="CN=sybase-server"
+  query tcp ether sybase-server 5000 ssl="CN=sybase-server"

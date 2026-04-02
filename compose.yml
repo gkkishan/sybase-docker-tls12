@@ -1,0 +1,23 @@
+# Compatible with both docker-compose and podman-compose
+version: '3.8'
+
+services:
+  sybase:
+    build: .
+    container_name: sybase-tls12
+    hostname: sybase-server
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./certs:/opt/sybase/ASE-16_0/certificates:Z
+      - sybase-data:/opt/sybase/data:Z
+    mem_limit: 2g
+    # Docker needs privileged for shmmax; Podman rootless uses --ipc=host instead (see run.sh)
+    privileged: true
+    environment:
+      - SYBASE=/opt/sybase
+      - SA_PASSWORD=myPassword
+    restart: unless-stopped
+
+volumes:
+  sybase-data:
