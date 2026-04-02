@@ -6,6 +6,7 @@
 #   2. Place your CA certificate at: certs/corporate-ca.crt
 #
 # Usage:
+#   bash run-corp.sh pull     # Pull base images (use if corp proxy blocks TLS)
 #   bash run-corp.sh up       # Build and start
 #   bash run-corp.sh down     # Stop
 #   bash run-corp.sh logs     # View logs
@@ -14,11 +15,13 @@ set -e
 
 # ── Detect runtime ───────────────────────────────────────────────────────────
 if command -v docker &> /dev/null && docker info &> /dev/null 2>&1; then
+  RUNTIME="docker"
   COMPOSE_CMD="docker compose"
   if ! docker compose version &> /dev/null 2>&1; then
     COMPOSE_CMD="docker-compose"
   fi
 elif command -v podman &> /dev/null; then
+  RUNTIME="podman"
   COMPOSE_CMD="podman-compose"
 else
   echo "ERROR: Neither Docker nor Podman found."
@@ -55,6 +58,19 @@ fi
 ACTION="${1:-up}"
 
 case "$ACTION" in
+  pull)
+    echo "Pulling base images (skipping TLS verify for corp proxy)..."
+    if [ "$RUNTIME" = "podman" ]; then
+      podman pull --tls-verify=false mcr.microsoft.com/dotnet/sdk:10.0
+      podman pull --tls-verify=false mcr.microsoft.com/dotnet/aspnet:10.0
+    else
+      echo "For Docker, add mcr.microsoft.com to insecure-registries in Docker settings, then re-run."
+      echo "Or pull on a machine with internet and use: docker save / docker load"
+      docker pull mcr.microsoft.com/dotnet/sdk:10.0
+      docker pull mcr.microsoft.com/dotnet/aspnet:10.0
+    fi
+    echo "Done. Now run: bash run-corp.sh up"
+    ;;
   up)
     echo "Building and starting..."
     $COMPOSE_CMD -f compose.corp.yml up --build -d
@@ -72,7 +88,7 @@ case "$ACTION" in
     $COMPOSE_CMD -f compose.corp.yml ps
     ;;
   *)
-    echo "Usage: $0 {up|down|logs|status}"
+    echo "Usage: $0 {pull|up|down|logs|status}"
     exit 1
     ;;
 esac
