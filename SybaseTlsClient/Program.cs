@@ -164,8 +164,8 @@ app.MapGet("/api/query", (string table, int? maxRows) =>
     if (string.IsNullOrWhiteSpace(table))
         return Results.Json(new { error = "table parameter is required" });
 
-    // Basic validation — only allow alphanumeric, dots, underscores
-    if (!System.Text.RegularExpressions.Regex.IsMatch(table, @"^[\w.]+$"))
+    // Allow owner.table, db..table, db.owner.table formats
+    if (!System.Text.RegularExpressions.Regex.IsMatch(table, @"^[\w]+([.][\w]*)*$"))
         return Results.Json(new { error = "Invalid table name" });
 
     var limit = Math.Clamp(maxRows ?? 50, 1, 500);
