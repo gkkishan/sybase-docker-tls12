@@ -1,53 +1,103 @@
 #!/bin/bash
 set -e
 
-source /opt/sybase/SYBASE.sh
+source /opt/sap/SYBASE.sh
 
-SA_PASSWORD="${SA_PASSWORD:-myPassword}"
-SERVER_NAME="MYSYBASE"
+SA_PASSWORD="sybase"
+SERVER_NAME="DB_TEST"
+CERT_DIR="$SYBASE/$SYBASE_ASE/certificates"
 
-echo "[1/4] Starting ASE server..."
-startserver -f /opt/sybase/ASE-16_0/install/RUN_${SERVER_NAME} &
+# ── Step 0: Initialize data if first run ──────────────────────────────────────
+if [ ! -f "/data/master.dat" ]; then
+  echo "[0/4] First run — extracting database files..."
+  cd /
+  tar -xzf /tmp/data.tar.gz --no-same-owner
+  cd -
+fi
 
-echo "[2/4] Waiting for ASE to become ready..."
-RETRIES=30
+# ── Step 1: Ensure certificates are in place ──────────────────────────────────
+echo "[1/4] Setting up TLS certificates..."
+mkdir -p "$CERT_DIR"
+if [ -f "$CERT_DIR/server.crt" ] && [ -f "$CERT_DIR/server.key" ]; then
+  echo "  Certificates found."
+else
+  echo "  ERROR: Missing certificate files in $CERT_DIR"
+  ls -la "$CERT_DIR/" 2>/dev/null
+  exit 1
+fi
+chmod 600 "$CERT_DIR/server.key"
+chmod 644 "$CERT_DIR/server.crt"
+
+# ── Step 2: Install and configure stunnel for TLS 1.2 ─────────────────────────
+echo "[2/4] Installing stunnel for TLS 1.2 proxy..."
+apt-get update -qq > /dev/null 2>&1 && apt-get install -y -qq stunnel4 > /dev/null 2>&1
+
+# Create stunnel config: TLS 1.2 on port 5000, proxy to ASE on port 5100
+cat > /etc/stunnel/stunnel.conf << STCFG
+pid = /var/run/stunnel.pid
+foreground = no
+debug = 5
+
+[sybase-tls]
+accept = 0.0.0.0:5000
+connect = 127.0.0.1:5100
+cert = ${CERT_DIR}/server.crt
+key = ${CERT_DIR}/server.key
+sslVersionMin = TLSv1.2
+sslVersionMax = TLSv1.2
+STCFG
+
+# ── Step 3: Update ASE to listen on port 5100 (internal) ─────────────────────
+echo "[3/4] Configuring ASE to listen on internal port 5100..."
+
+# Update interfaces to use port 5100
+cat > /opt/sap/interfaces << IFACE
+DB_TEST
+	master tcp ether 0.0.0.0 5100
+	query tcp ether 0.0.0.0 5100
+IFACE
+
+# Update the RUN file to use port 5100 (interfaces dir is /opt/sap)
+# The RUN file already points to /opt/sap for interfaces
+
+# ── Step 4: Start ASE + stunnel ───────────────────────────────────────────────
+echo "[4/4] Starting ASE server on port 5100 + stunnel TLS proxy on port 5000..."
+
+startserver -f $SYBASE/$SYBASE_ASE/install/RUN_${SERVER_NAME} > /dev/null &
+
+# Wait for ASE on port 5100
+RETRIES=90
 until isql -Usa -P"${SA_PASSWORD}" -S"${SERVER_NAME}" -Q "select 1" > /dev/null 2>&1; do
   RETRIES=$((RETRIES - 1))
   if [ $RETRIES -eq 0 ]; then
-    echo "ERROR: ASE did not start in time."
+    echo "  ERROR: ASE did not start in time."
+    cat $SYBASE/$SYBASE_ASE/install/${SERVER_NAME}.log 2>/dev/null | tail -30
     exit 1
   fi
-  sleep 3
+  sleep 5
 done
+echo "  ASE is running on internal port 5100."
 
-echo "[3/4] ASE is up. Configuring TLS 1.2..."
-isql -Usa -P"${SA_PASSWORD}" -S"${SERVER_NAME}" << ISQL
--- Register server certificate
-sp_ssladmin addcert, "${SERVER_NAME}", "/opt/sybase/ASE-16_0/certificates/sybase.crt"
-go
+# Start stunnel
+stunnel /etc/stunnel/stunnel.conf
+echo "  stunnel TLS 1.2 proxy is running on port 5000."
 
--- Enable SSL services
-sp_configure "ssl services", 1
-go
+echo ""
+echo "============================================"
+echo " Sybase ASE with TLS 1.2 (via stunnel)"
+echo " TLS port: 5000 (external)"
+echo " ASE port: 5100 (internal, no TLS)"
+echo " SA pass:  sybase"
+echo "============================================"
 
--- Enforce TLS 1.2 as minimum protocol (disables TLS 1.0 and 1.1)
-sp_ssladmin setproto, "TLSv1.2"
-go
+# Graceful shutdown handler
+shutdown_handler() {
+  echo "Received SIGTERM, shutting down..."
+  kill $(cat /var/run/stunnel.pid) 2>/dev/null
+  isql -Usa -P"${SA_PASSWORD}" -S"${SERVER_NAME}" -Q "shutdown with nowait" > /dev/null 2>&1
+  exit 0
+}
+trap 'shutdown_handler' SIGTERM
 
--- Drop NULL (unencrypted) cipher suites
-sp_ssladmin dropciphers, "NULL"
-go
-ISQL
-
-echo "[4/4] TLS 1.2 configured. Restarting ASE to apply..."
-isql -Usa -P"${SA_PASSWORD}" -S"${SERVER_NAME}" << ISQL
-shutdown with nowait
-go
-ISQL
-
-sleep 5
-
-startserver -f /opt/sybase/ASE-16_0/install/RUN_${SERVER_NAME}
-
-echo "ASE is running with TLS 1.2 enforced on port 5000."
-tail -f /opt/sybase/ASE-16_0/install/${SERVER_NAME}.log
+tail -f $SYBASE/$SYBASE_ASE/install/${SERVER_NAME}.log &
+wait $!

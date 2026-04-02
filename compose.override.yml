@@ -1,0 +1,5 @@
+# Apple Silicon override — forces x86_64 emulation for SAP ODBC libs
+# Delete this file on x86_64 Linux / GKE
+services:
+  dotnet-client:
+    platform: linux/amd64

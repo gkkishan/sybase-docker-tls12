@@ -1,4 +1,7 @@
 certs/server.crt
 certs/server.key
+certs/corporate-ca.crt
 *.log
 .DS_Store
+SybaseTlsClient/bin/
+SybaseTlsClient/obj/

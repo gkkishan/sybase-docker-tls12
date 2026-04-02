@@ -1,0 +1,20 @@
+services:
+  dotnet-client:
+    build:
+      context: ./SybaseTlsClient
+      dockerfile: Dockerfile
+    container_name: sybase-dotnet-client
+    ports:
+      - "8080:8080"
+    volumes:
+      # Mount your corporate CA certificate
+      # >>> CHANGE: path to your corporate CA .crt or .pem file
+      - ./certs/corporate-ca.crt:/opt/sap/certs/ca.crt:ro,Z
+    environment:
+      # >>> CHANGE: your corporate Sybase server details
+      - SYBASE_CONNECTION_STRING=Driver={Sybase ODBC Driver};Server=YOUR_SYBASE_HOST;Port=YOUR_PORT;Database=YOUR_DB;UID=YOUR_USER;PWD=YOUR_PASSWORD;Encryption=ssl;TrustedFile=/opt/sap/certs/ca.crt;
+      - SYBASE_TLS_HOST=YOUR_SYBASE_HOST
+      - SYBASE_TLS_PORT=YOUR_PORT
+      - SYBASE_CA_CERT=/opt/sap/certs/ca.crt
+      - ASPNETCORE_URLS=http://+:8080
+    restart: unless-stopped
