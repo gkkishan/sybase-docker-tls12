@@ -14,7 +14,7 @@ RUN dotnet publish -c Release -o /app
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
 
-RUN apt-get update -qq && apt-get install -y -qq unixodbc && rm -rf /var/lib/apt/lists/*
+RUN apt-get update -qq && apt-get install -y -qq unixodbc libssl-dev ca-certificates && rm -rf /var/lib/apt/lists/*
 
 COPY sap-odbc/lib/ /opt/sap/DataAccess64/ODBC/lib/
 COPY sap-odbc/dm-lib/ /opt/sap/DataAccess64/ODBC/dm/lib64/
