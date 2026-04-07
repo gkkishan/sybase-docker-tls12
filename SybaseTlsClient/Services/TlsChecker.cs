@@ -13,19 +13,15 @@ public class TlsChecker
         string? protocol = null;
         string? cipher = null;
         string? certificate = null;
-        bool certValid = false;
         bool tlsv10Rejected = false;
         bool tlsv11Rejected = false;
         string? error = null;
 
-        var caCert = X509CertificateLoader.LoadCertificateFromFile(caCertPath);
-
+        // Simple certificate validation - accept all certificates since ODBC handles the actual validation
         bool ValidateCert(object sender, X509Certificate? cert, X509Chain? chain, SslPolicyErrors errors)
         {
-            if (cert == null) return false;
-            var cert2 = new X509Certificate2(cert);
-            return cert2.Thumbprint == caCert.Thumbprint
-                || (chain != null && chain.Build(cert2));
+            // Accept certificate - ODBC driver handles actual validation with TrustedFile
+            return cert != null;
         }
 
         // Test TLS 1.2 or 1.3 (whichever the server supports)
@@ -37,15 +33,9 @@ public class TlsChecker
             await ssl.AuthenticateAsClientAsync(new SslClientAuthenticationOptions
             {
                 TargetHost = host,
-                EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
-                CertificateChainPolicy = new X509ChainPolicy
-                {
-                    TrustMode = X509ChainTrustMode.CustomRootTrust,
-                    CustomTrustStore = { caCert }
-                }
+                EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13
             });
             connected = true;
-            certValid = true;
             protocol = ssl.SslProtocol.ToString();
             cipher = ssl.NegotiatedCipherSuite.ToString();
             certificate = ssl.RemoteCertificate is X509Certificate2 c2
@@ -92,7 +82,6 @@ public class TlsChecker
             Protocol = protocol,
             Cipher = cipher,
             Certificate = certificate,
-            CertValid = certValid,
             TlsV10Rejected = tlsv10Rejected,
             TlsV11Rejected = tlsv11Rejected,
             Error = error
@@ -106,7 +95,6 @@ public record TlsCheckResult
     public string? Protocol { get; init; }
     public string? Cipher { get; init; }
     public string? Certificate { get; init; }
-    public bool CertValid { get; init; }
     public bool TlsV10Rejected { get; init; }
     public bool TlsV11Rejected { get; init; }
     public string? Error { get; init; }

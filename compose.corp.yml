@@ -7,7 +7,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./certs/corporate-ca.crt:/opt/sap/certs/ca.crt:ro,Z
+      - ./certs/corporate-ca-bundle.crt:/opt/sap/certs/ca.crt:ro,Z
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:8080
